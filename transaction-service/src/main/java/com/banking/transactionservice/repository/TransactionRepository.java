@@ -1,4 +1,7 @@
 package com.banking.transactionservice.repository;
 
-public class TransactionRepository {
+import com.banking.transactionservice.entity.Transaction;
+import org.springframework.data.jpa.repository.JpaRepository;
+
+public interface TransactionRepository extends JpaRepository<Transaction, String> {
 }
