@@ -16,7 +16,7 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 @NoArgsConstructor
 public class Account {
-    @id
+    @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private String id;
 
@@ -50,5 +50,7 @@ public class Account {
     private LocalDateTime createdAt;
 
     @UpdateTimestamp
-    private LocalDateTime updatesAt;
+    private LocalDateTime updatedAt;
+
+
 }
