@@ -6,9 +6,11 @@ import com.banking.transactionservice.dto.TransferRequest;
 import com.banking.transactionservice.entity.Transaction;
 import com.banking.transactionservice.entity.TransactionStatus;
 import com.banking.transactionservice.entity.TransactionType;
+import com.banking.transactionservice.event.TransactionInitiatedEvent;
 import com.banking.transactionservice.repository.TransactionRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 
 import java.util.UUID;
@@ -20,6 +22,8 @@ public class TransactionService {
 
     private final TransactionRepository transactionRepository;
     private final AccountServiceClient accountServiceClient;
+
+    private final KafkaTemplate<String,Object> kafkaTemplate;
 
 
     private static String TRANSACTION_INITIATED_TOPIC = "transaction.initiated";
@@ -36,7 +40,7 @@ public class TransactionService {
      * @param request
      * @return
      */
-    public TransactionResponse transfer(TransferRequest request){
+    public TransactionResponse transfer(TransferRequest request) {
 
         log.info("SAGA START - Transfer: {} -> {} amount: {}",
                 request.getSenderAccountNumber(),
@@ -60,9 +64,47 @@ public class TransactionService {
         Transaction savedTransaction = transactionRepository.save(transaction);
         log.info("Transaction saved as PROCESSING: {}", savedTransaction.getId());
 
+        // SAGA STEP -2: Publish for fraud check
+        TransactionInitiatedEvent event = new TransactionInitiatedEvent(
+                savedTransaction.getId(),
+                savedTransaction.getSenderAccountNumber(),
+                savedTransaction.getReceiverAccountNumber(),
+                savedTransaction.getAmount(),
+                savedTransaction.getDescription()
+        );
+
+        kafkaTemplate.send(TRANSACTION_INITIATED_TOPIC, savedTransaction.getId(), event);
+        log.info("SAGA STEP 2 - TransactionInitiatedEvent published: {}", savedTransaction.getId());
+
+        return mapToResponse(savedTransaction);
+    }
+
+        private TransactionResponse mapToResponse(Transaction transaction){
+
+        TransactionResponse response = new TransactionResponse();
+        response.setId(transaction.getId());
+        response.setSenderAccountNumber(transaction.getSenderAccountNumber());
+        response.setReceiverAccountNumber(transaction.getReceiverAccountNumber());
+        response.setAmount(transaction.getAmount());
+        response.setType(transaction.getType());
+        response.setStatus(transaction.getStatus());
+        response.setDescription(transaction.getDescription());
+        response.setReferenceNumber(transaction.getReferenceNumber());
+        response.setFailureReason(transaction.getFailureReason());
+        response.setCreatedAt(transaction.getCreatedAt());
+        response.setCompletedAt(transaction.getCompletedAt());
+
+        return response;
+
+
+        }
+
+
 
 
     }
 
 
-}
+
+
+
