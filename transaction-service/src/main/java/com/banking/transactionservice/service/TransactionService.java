@@ -10,6 +10,7 @@ import com.banking.transactionservice.event.TransactionInitiatedEvent;
 import com.banking.transactionservice.repository.TransactionRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 
@@ -26,7 +27,7 @@ public class TransactionService {
     private final AccountServiceClient accountServiceClient;
 
     private final KafkaTemplate<String,Object> kafkaTemplate;
-
+    private final RedisTemplate<String, String> redisTemplate;
 
     private static String TRANSACTION_INITIATED_TOPIC = "transaction.initiated";
     private static String TRANSACTION_COMPLETED_TOPIC = "transaction.completed";
@@ -97,6 +98,47 @@ public class TransactionService {
                 .map(this::mapToResponse)
                 .collect(Collectors.toList());
     }
+
+    public  TransactionResponse verifyOTP(String transactionID, String otp){
+        log.info("OTP verification for the transaction: {}", transactionID);
+
+        Transaction transaction = transactionRepository.findById(transactionID)
+                .orElseThrow(() -> new RuntimeException(
+                        "Transaction not found "+ transactionID
+                ));
+
+        String otpKey = "verification:otp" + transactionID;
+        String storeOtp = redisTemplate.opsForValue().get(otpKey);
+
+        if(storeOtp == null){
+            // OTP EXPIRED
+            log.warn("OTP expired for transaction: {}", transactionID);
+            compensateTransaction(transaction, "OTP expired - transaction cancelled and amount refunded");
+            return mapToResponse(transaction);
+        }
+
+        if(!storeOtp.equals((otp))){
+            // BLOCK ACCOUNT AND REFUND
+            log.warn("Wrong OTP - blocking account and refunding: {}", transactionID);
+            redisTemplate.delete(otpKey);
+            blockAccountAndCompensate(transaction,
+                    "Wrong OTP entered - transaction cancelled, "+
+                    "account blocked for security");
+
+            return mapToResponse(transaction);
+        }
+
+        // OTP correct - complete the transaction
+        log.info("OTP verified - completing transaction: {}", transactionID);
+        redisTemplate.delete(otpKey);
+        completeTransaction(transaction);
+        return mapToResponse(transaction);
+    }
+
+    private void compensateTransaction(Transaction transaction, String reason){
+
+    }
+
 
     private TransactionResponse mapToResponse(Transaction transaction){
 
